@@ -1,31 +1,28 @@
 import hmac
 import hashlib
-from xtea import *
-import secrets
 import io
 from PIL import Image
 import time
+from Chacha import chacha20_encrypt, chacha20_decrypt
+from Crypto.Random import get_random_bytes
+
 
 def generate_key():
-    return secrets.token_bytes(16)
+    return get_random_bytes(32)
 
-def generate_iv():
-    return secrets.token_bytes(8)
 
-def xtea_encrypt(key,iv, data):
-    x = new(key, mode=MODE_OFB, IV=iv)
-    return x.encrypt(data)
+def generate_nonce():
+    return get_random_bytes(8)
 
-def xtea_decrypt(key,iv, data):
-    x = new(key, mode=MODE_OFB, IV=iv)
-    return x.decrypt(data)
 
 def generate_hmac_sha256(key, data):
     return hmac.new(key, data, hashlib.sha256).digest()
 
-def hide(image_path, data, key, iv):
+
+def hide(image_path, data, key, nonce):
     start = time.time()
-    encrypted_data = xtea_encrypt(key,iv, data)
+    data = data.encode("utf-8")
+    encrypted_data = chacha20_encrypt(data, key, nonce)
     hmac_digest = generate_hmac_sha256(key, encrypted_data)
     img = Image.open(image_path)
     img.save("encrypted_image.jpg", "JPEG")
@@ -33,9 +30,10 @@ def hide(image_path, data, key, iv):
         f.write(hmac_digest)
         f.write(encrypted_data)
     end = time.time()
-    return "Data hidden in image successfully" , end - start
+    return "Data hidden in image successfully", end - start
 
-def extract(image_path, key, iv):
+
+def extract(image_path, key, nonce):
     start = time.time()
     with open(image_path, "rb") as f:
         encrypted_data = f.read()
@@ -47,7 +45,7 @@ def extract(image_path, key, iv):
         end = time.time()
         return "HMAC mismatch. Data is tampered"
     end = time.time()
-    return xtea_decrypt(key, iv, encrypted_data).decode("utf-8") , end - start
+    return chacha20_decrypt(encrypted_data, key, nonce).decode("utf-8"), end - start
 
 
 start = time.time()
@@ -55,9 +53,9 @@ username = input("Enter your username: ")
 password = input("Enter your password: ")
 security_question = "What is your favorite color?"
 answer = input(security_question + " ")
-face = Image.open('face.png')
+face = Image.open('face.jpg')  # path to the face image
 face_byte = io.BytesIO()
-face.save(face_byte, format='PNG')
+face.save(face_byte, format='JPEG')
 face_byte = face_byte.getvalue()
 message = {}
 message["username"] = username
@@ -67,15 +65,15 @@ message["answer"] = answer
 message["face"] = face_byte
 message = str(message)
 key = generate_key()
-iv = generate_iv()
-res, time1 = hide("abc.jpg", message, key, iv)
+nonce = generate_nonce()
+res, time1 = hide("secret.jpg", message, key, nonce) # path to the image in which you want to hide the data
 print(res)
-extracted_data , time2 = extract("encrypted_image.jpg", key, iv)
+extracted_data, time2 = extract("encrypted_image.jpg", key, nonce) # path to the image in which you have hidden the data
 
 end = time.time()
 
 print("Time taken to hide data in image:", str(time1)+" seconds")
-print("Time taken to extract data from image:", str(time2)+" seconds") 
+print("Time taken to extract data from image:", str(time2)+" seconds")
 
 for key, value in eval(extracted_data).items():
     if key == "face":
